@@ -12,8 +12,8 @@ workflows:
       events:
         - push
       branch_patterns:
-        - main
-        - master
+        - pattern: 'main'
+        - pattern: 'master'
     scripts:
       - name: Initialize local.properties
         script: |
