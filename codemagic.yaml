@@ -1,13 +1,11 @@
 workflows:
   ios-ad-hoc-workflow:
-    name: EasyBuy iOS IPA Build Workflow
+    name: EasyBuy iOS Build Workflow
     max_build_duration: 30
-    instance_type: mac_mini_m1
+    instance_type: mac_mini_m2
     environment:
       flutter: stable
       xcode: latest
-      groups:
-        - provisioning # Placeholder for credentials if you add them later
     triggering:
       events:
         - push
@@ -18,32 +16,18 @@ workflows:
       - name: Initialize local.properties
         script: |
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
-      - name: Fetch Flutter packages
+      - name: Installing dependencies
         script: |
           flutter pub get
-      - name: Run widget tests
+      - name: Building iOS
         script: |
-          flutter test
-      - name: Build iOS IPA with Ad-Hoc / Unsigned structure for Sideloading
-        script: |
-          # Build the iOS bundle directory tree
           flutter build ios --release --no-codesign
-          
-          # Create Payload directory structure for IPA archiving
-          mkdir -p build/ios/iphoneos/Payload
-          
-          # Copy the Runner.app build artifact into Payload directory
-          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
-          
-          # Package the payload folder into a zip file named easybuy.ipa
-          cd build/ios/iphoneos
-          zip -r easybuy.ipa Payload
     artifacts:
-      - build/ios/iphoneos/*.ipa
+      - build/ios/iphoneos
     publishing:
       email:
         recipients:
-          - abelt_xqxio3w@example.com # Replace with your real email inside codemagic dashboard if desired
+          - thomasabelt35@gmail.com
         notify:
           success: true
           failure: true
