@@ -132,15 +132,13 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
       _deposit = _productPrice * depositRate;
       _remainingBalance = _productPrice - _deposit;
 
-      // Reducing-balance calculation where each month's interest is based on the outstanding balance at that time.
-      double rate = 0.11; // 11% per month
+      // Simple Interest on Remaining Balance added flat to each month
+      double rate = 0.11; // 11% flat rate based on remaining balance
       int months = _selectedPeriod;
 
-      // Equal Monthly Installment (EMI) Formula for reducing balance:
-      // EMI = [P * r * (1 + r)^n] / [(1 + r)^n - 1]
-      double num = _remainingBalance * rate * math.pow(1 + rate, months);
-      double den = math.pow(1 + rate, months) - 1;
-      _monthlyPayment = num / den;
+      double flatInterestPerMonth = _remainingBalance * rate;
+      double principalPerMonth = _remainingBalance / months;
+      _monthlyPayment = principalPerMonth + flatInterestPerMonth;
 
       _paymentSchedule = [];
       double currentBalance = _remainingBalance;
@@ -148,16 +146,10 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
       double computedTotalPayments = 0.0;
 
       for (int i = 1; i <= months; i++) {
-        double interestThisMonth = currentBalance * rate;
+        double interestThisMonth = flatInterestPerMonth;
         double paymentThisMonth = _monthlyPayment;
-
-        if (i == months) {
-          // Last month adjustment to perfectly settle the loan
-          paymentThisMonth = currentBalance + interestThisMonth;
-        }
-
-        double principalPaid = paymentThisMonth - interestThisMonth;
-        double nextBalance = currentBalance - principalPaid;
+        double nextBalance = currentBalance - principalPerMonth;
+        
         if (nextBalance < 0 || i == months) {
           nextBalance = 0.0;
         }
