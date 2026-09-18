@@ -34,14 +34,14 @@ class EasyBuyApp extends StatelessWidget {
 }
 
 class ScheduleRow {
-  final int month;
-  final double interest;
+  final String periodLabel;
+  final double termChargePortion;
   final double payment;
   final double remainingBalance;
 
   ScheduleRow({
-    required this.month,
-    required this.interest,
+    required this.periodLabel,
+    required this.termChargePortion,
     required this.payment,
     required this.remainingBalance,
   });
@@ -56,21 +56,26 @@ class InstallmentCalculatorScreen extends StatefulWidget {
 
 class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScreen> {
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _specController = TextEditingController();
   
   String _selectedBrand = 'LG'; // 'LG', 'Haier', 'Other Brand'
-  int _selectedPeriod = 3; // 3 or 6
+  String _selectedCategory = 'TV'; // 'TV', 'Fridge', 'Freezer', 'Air Conditioner', 'Other Products'
+  String _selectedPeriod = '3 Months'; // '3 Months', '4 Months', '5 Months', '6 Months', '13 Weeks'
 
   bool _hasCalculated = false;
   bool _isEligible = true;
   String? _validationError;
+  String? _specValidationError;
 
   // Calculation Results
   double _productPrice = 0.0;
+  double _depositPercentage = 0.0;
   double _deposit = 0.0;
   double _remainingBalance = 0.0;
-  double _monthlyPayment = 0.0;
-  double _totalInterest = 0.0;
-  double _totalInstallmentPayments = 0.0;
+  double _termChargePercentage = 0.0;
+  double _termCharge = 0.0;
+  double _totalRepayment = 0.0;
+  double _periodicPayment = 0.0;
   double _totalAmountCustomerPays = 0.0;
   List<ScheduleRow> _paymentSchedule = [];
 
@@ -96,9 +101,11 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
   void _calculateInstallment() {
     setState(() {
       _validationError = null;
+      _specValidationError = null;
       _hasCalculated = false;
       _isEligible = true;
 
+      // Price Validation
       String priceText = _priceController.text.trim();
       if (priceText.isEmpty) {
         _validationError = "Please enter a product price.";
@@ -118,64 +125,121 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
 
       _productPrice = price;
 
-      // Eligibility Check
+      // Product Price Eligibility Check
       if (_productPrice > 10000.0) {
         _isEligible = false;
         _hasCalculated = true;
         return;
       }
 
-      // Deposit Rules
-      // LG and Haier products: Deposit = 50% of product price.
-      // Every other brand: Deposit = 40% of product price.
-      double depositRate = (_selectedBrand == 'LG' || _selectedBrand == 'Haier') ? 0.50 : 0.40;
-      _deposit = _productPrice * depositRate;
+      // Determine Deposit Percentage automatically
+      double depositPct = 0.50; // Default for LG and Haier
+
+      if (_selectedBrand == 'Other Brand') {
+        if (_selectedCategory == 'Other Products') {
+          depositPct = 0.40;
+        } else {
+          String specText = _specController.text.trim();
+          if (specText.isEmpty) {
+            _specValidationError = "Please enter the required specification value.";
+            return;
+          }
+          double? specValue = double.tryParse(specText);
+          if (specValue == null || specValue < 0) {
+            _specValidationError = "Please enter a valid numeric value.";
+            return;
+          }
+
+          if (_selectedCategory == 'TV') {
+            // 50 inches and above = 50%, below 50 inches = 40%
+            depositPct = (specValue >= 50.0) ? 0.50 : 0.40;
+          } else if (_selectedCategory == 'Fridge' || _selectedCategory == 'Freezer') {
+            // 168 litres and above = 50%, below 168 litres = 40%
+            depositPct = (specValue >= 168.0) ? 0.50 : 0.40;
+          } else if (_selectedCategory == 'Air Conditioner') {
+            // 2.0 HP and above = 50%, below 2.0 HP = 40%
+            depositPct = (specValue >= 2.0) ? 0.50 : 0.40;
+          }
+        }
+      }
+
+      _depositPercentage = depositPct;
+      _deposit = _productPrice * _depositPercentage;
       _remainingBalance = _productPrice - _deposit;
 
-      // Simple Interest on Remaining Balance added flat to each month
-      double rate = 0.11; // 11% flat rate based on remaining balance
-      int months = _selectedPeriod;
+      // Repayment Term Charges & Periods
+      int totalPeriods = 3;
+      bool isWeekly = false;
 
-      double flatInterestPerMonth = _remainingBalance * rate;
-      double principalPerMonth = _remainingBalance / months;
-      _monthlyPayment = principalPerMonth + flatInterestPerMonth;
+      if (_selectedPeriod == '3 Months') {
+        _termChargePercentage = 0.40;
+        totalPeriods = 3;
+      } else if (_selectedPeriod == '4 Months') {
+        _termChargePercentage = 0.50;
+        totalPeriods = 4;
+      } else if (_selectedPeriod == '5 Months') {
+        _termChargePercentage = 0.60;
+        totalPeriods = 5;
+      } else if (_selectedPeriod == '6 Months') {
+        _termChargePercentage = 0.70;
+        totalPeriods = 6;
+      } else if (_selectedPeriod == '13 Weeks') {
+        _termChargePercentage = 0.40; // Same structure base as 3 months
+        totalPeriods = 13;
+        isWeekly = true;
+      }
 
+      _termCharge = _remainingBalance * _termChargePercentage;
+      _totalRepayment = _remainingBalance + _termCharge;
+      _periodicPayment = _totalRepayment / totalPeriods;
+      _totalAmountCustomerPays = _deposit + _totalRepayment;
+
+      // Generate payment schedule
       _paymentSchedule = [];
-      double currentBalance = _remainingBalance;
-      double computedTotalInterest = 0.0;
-      double computedTotalPayments = 0.0;
+      double currentBalance = _totalRepayment;
+      double termChargePerPeriod = _termCharge / totalPeriods;
 
-      for (int i = 1; i <= months; i++) {
-        double interestThisMonth = flatInterestPerMonth;
-        double paymentThisMonth = _monthlyPayment;
-        double nextBalance = currentBalance - principalPerMonth;
+      for (int i = 1; i <= totalPeriods; i++) {
+        double paymentThisPeriod = _periodicPayment;
+        double nextBalance = currentBalance - paymentThisPeriod;
         
-        if (nextBalance < 0 || i == months) {
+        if (nextBalance < 0 || i == totalPeriods) {
           nextBalance = 0.0;
         }
 
         _paymentSchedule.add(ScheduleRow(
-          month: i,
-          interest: interestThisMonth,
-          payment: paymentThisMonth,
+          periodLabel: isWeekly ? 'Week $i' : 'Month $i',
+          termChargePortion: termChargePerPeriod,
+          payment: paymentThisPeriod,
           remainingBalance: nextBalance,
         ));
 
-        computedTotalInterest += interestThisMonth;
-        computedTotalPayments += paymentThisMonth;
         currentBalance = nextBalance;
       }
 
-      _totalInterest = computedTotalInterest;
-      _totalInstallmentPayments = computedTotalPayments;
-      _totalAmountCustomerPays = _deposit + _totalInstallmentPayments;
       _hasCalculated = true;
     });
+  }
+
+  String _getSpecLabel() {
+    if (_selectedCategory == 'TV') return 'TV Size (Inches)';
+    if (_selectedCategory == 'Fridge') return 'Fridge Capacity (Litres)';
+    if (_selectedCategory == 'Freezer') return 'Freezer Capacity (Litres)';
+    if (_selectedCategory == 'Air Conditioner') return 'AC Horsepower (HP)';
+    return '';
+  }
+
+  String _getSpecHint() {
+    if (_selectedCategory == 'TV') return 'e.g. 43, 50, 55';
+    if (_selectedCategory == 'Fridge' || _selectedCategory == 'Freezer') return 'e.g. 150, 168, 200';
+    if (_selectedCategory == 'Air Conditioner') return 'e.g. 1.5, 2.0, 2.5';
+    return '';
   }
 
   @override
   void dispose() {
     _priceController.dispose();
+    _specController.dispose();
     super.dispose();
   }
 
@@ -280,37 +344,77 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
                       ),
                       const SizedBox(height: 20),
 
+                      // Dynamic Category and Spec Inputs for Other Brands
+                      if (_selectedBrand == 'Other Brand') ...[
+                        Text(
+                          'Product Category',
+                          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(_selectedCategory),
+                          initialValue: _selectedCategory,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: <String>['TV', 'Fridge', 'Freezer', 'Air Conditioner', 'Other Products']
+                              .map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value),
+                            );
+                          }).toList(),
+                          onChanged: (newValue) {
+                            setState(() {
+                              _selectedCategory = newValue ?? 'TV';
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 20),
+
+                        if (_selectedCategory != 'Other Products') ...[
+                          Text(
+                            _getSpecLabel(),
+                            style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _specController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              hintText: _getSpecHint(),
+                              errorText: _specValidationError,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      ],
+
                       // Payment Period Selection
                       Text(
                         'Payment Period',
                         style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          return ToggleButtons(
-                            borderRadius: BorderRadius.circular(12),
-                            constraints: BoxConstraints(
-                              minWidth: math.max(0.0, (constraints.maxWidth - 12) / 2),
-                              minHeight: 48,
-                            ),
-                            isSelected: [
-                              _selectedPeriod == 3,
-                              _selectedPeriod == 6,
-                            ],
-                            onPressed: (index) {
-                              setState(() {
-                                _selectedPeriod = (index == 0) ? 3 : 6;
-                              });
-                            },
-                            selectedColor: Colors.white,
-                            fillColor: theme.colorScheme.primary,
-                            color: theme.colorScheme.primary,
-                            children: const [
-                              Text('3 Months', style: TextStyle(fontWeight: FontWeight.bold)),
-                              Text('6 Months', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ],
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(_selectedPeriod),
+                        initialValue: _selectedPeriod,
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        items: <String>['3 Months', '4 Months', '5 Months', '6 Months', '13 Weeks']
+                            .map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
                           );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            _selectedPeriod = newValue ?? '3 Months';
+                          });
                         },
                       ),
                     ],
@@ -382,7 +486,7 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
                   ),
                   const SizedBox(height: 12),
 
-                  // High-priority Results Highlights (Deposit & Monthly Payment)
+                  // High-priority Results Highlights (Deposit & Periodic Payment)
                   Row(
                     children: [
                       Expanded(
@@ -428,14 +532,14 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
                             padding: const EdgeInsets.all(16.0),
                             child: Column(
                               children: [
-                                const Text(
-                                  'MONTHLY PAYMENT',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                                Text(
+                                  _selectedPeriod == '13 Weeks' ? 'WEEKLY PAYMENT' : 'MONTHLY PAYMENT',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
                                 ),
                                 const SizedBox(height: 4),
                                 FittedBox(
                                   child: Text(
-                                    _formatCurrency(_monthlyPayment),
+                                    _formatCurrency(_periodicPayment),
                                     style: TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -462,19 +566,25 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
                         children: [
                           _buildResultRow('Product Price', _formatCurrency(_productPrice)),
                           const Divider(),
-                          _buildResultRow('Deposit', _formatCurrency(_deposit)),
+                          _buildResultRow('Deposit Percentage', '${(_depositPercentage * 100).toStringAsFixed(0)}%'),
+                          const Divider(),
+                          _buildResultRow('Deposit Amount', _formatCurrency(_deposit)),
                           const Divider(),
                           _buildResultRow('Remaining Balance', _formatCurrency(_remainingBalance)),
                           const Divider(),
-                          _buildResultRow('Payment Period', '$_selectedPeriod Months'),
+                          _buildResultRow('Payment Period', _selectedPeriod),
                           const Divider(),
-                          _buildResultRow('Interest Rate', '11% per month'),
+                          _buildResultRow('Term Charge Percentage', '${(_termChargePercentage * 100).toStringAsFixed(0)}%'),
                           const Divider(),
-                          _buildResultRow('Monthly Payment', _formatCurrency(_monthlyPayment), isBold: true),
+                          _buildResultRow('Term Charge Amount', _formatCurrency(_termCharge)),
                           const Divider(),
-                          _buildResultRow('Total Interest', _formatCurrency(_totalInterest)),
+                          _buildResultRow('Total Repayment Balance', _formatCurrency(_totalRepayment)),
                           const Divider(),
-                          _buildResultRow('Total Installment Payments', _formatCurrency(_totalInstallmentPayments)),
+                          _buildResultRow(
+                            _selectedPeriod == '13 Weeks' ? 'Weekly Payment' : 'Monthly Payment', 
+                            _formatCurrency(_periodicPayment), 
+                            isBold: true,
+                          ),
                           const Divider(),
                           _buildResultRow(
                             'Total Amount Customer Pays', 
@@ -502,19 +612,19 @@ class _InstallmentCalculatorScreenState extends State<InstallmentCalculatorScree
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
                           headingRowColor: WidgetStateProperty.all(theme.colorScheme.primary.withValues(alpha: 0.05)),
-                          columnSpacing: 14,
+                          columnSpacing: 20,
                           horizontalMargin: 12,
                           columns: const [
-                            DataColumn(label: Text('Month', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Interest', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Period', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Term Charge Portion', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text('Payment', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text('Balance', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Remaining Balance', style: TextStyle(fontWeight: FontWeight.bold))),
                           ],
                           rows: _paymentSchedule.map((row) {
                             return DataRow(
                               cells: [
-                                DataCell(Text('Month ${row.month}')),
-                                DataCell(Text(_formatCurrency(row.interest))),
+                                DataCell(Text(row.periodLabel)),
+                                DataCell(Text(_formatCurrency(row.termChargePortion))),
                                 DataCell(Text(_formatCurrency(row.payment))),
                                 DataCell(Text(_formatCurrency(row.remainingBalance))),
                               ],
